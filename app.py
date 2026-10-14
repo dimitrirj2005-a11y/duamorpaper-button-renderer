@@ -551,7 +551,7 @@ async def authorize_decision(request: Request):
     redirect_uri = params["redirect_uri"]
     state = params["state"]
     if decision != "approve":
-        return RedirectResponse(redirect_uri + "?" + urlencode({"error": "access_denied", "state": state, "iss": ISSUER}), status_code=302)
+        return RedirectResponse(redirect_uri + "?" + urlencode({"error": "access_denied", "state": state, "iss": ISSUER}), status_code=303)
     user = os.getenv("OAUTH_LOGIN_USERNAME", "duamorpaper")
     password = os.getenv("OAUTH_LOGIN_PASSWORD", "")
     remote = request.client.host if request.client else "unknown"
@@ -576,7 +576,7 @@ async def authorize_decision(request: Request):
         "sub": "duamorpaper-owner",
         "exp": time.time() + AUTH_CODE_LIFETIME,
     }
-    return RedirectResponse(redirect_uri + "?" + urlencode({"code": code, "state": state, "iss": ISSUER}), status_code=302)
+    return RedirectResponse(redirect_uri + "?" + urlencode({"code": code, "state": state, "iss": ISSUER}), status_code=303)
 
 @app.post("/token")
 async def token_endpoint(request: Request):
