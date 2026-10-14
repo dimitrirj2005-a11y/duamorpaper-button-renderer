@@ -8,7 +8,13 @@ services:
     healthCheckPath: /healthz
     autoDeployTrigger: off
     envVars:
-      - key: MCP_API_KEY
+      - key: PUBLIC_BASE_URL
+        value: https://duamorpaper-button-renderer-mcp.onrender.com
+      - key: OAUTH_SIGNING_SECRET
         generateValue: true
+      - key: OAUTH_LOGIN_USERNAME
+        value: duamorpaper
+      - key: OAUTH_LOGIN_PASSWORD
+        sync: false
       - key: ALLOWED_ORIGINS
         value: https://chatgpt.com,https://chat.openai.com
