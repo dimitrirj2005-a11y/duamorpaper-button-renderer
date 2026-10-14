@@ -119,7 +119,7 @@ def test_authorization_code_pkce_and_refresh(monkeypatch):
     denied = client.post("/authorize/decision", data={**params, "username":"duamorpaper", "password":"wrong", "decision":"approve"})
     assert denied.status_code == 200 and "incorretos" in denied.text
     grant = client.post("/authorize/decision", data={**params, "username":"duamorpaper", "password":"test-login-password", "decision":"approve"}, follow_redirects=False)
-    assert grant.status_code == 302
+    assert grant.status_code == 303
     callback = parse_qs(urlparse(grant.headers["location"]).query)
     assert callback["state"] == ["test-state"]
     assert callback["iss"] == [service.ISSUER]
