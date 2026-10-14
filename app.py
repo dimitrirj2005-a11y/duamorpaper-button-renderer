@@ -98,6 +98,8 @@ def render_layers(args: dict[str, Any]) -> tuple[bytes, dict[str, Any]]:
     fold_r = radius * p["fold"] / p["total"]
     background = decode_png(args.get("background_png_base64"), "background_png_base64")
     background = ImageOps.fit(background, canvas_size, method=Image.Resampling.LANCZOS)
+    # Background must cover the whole cut disk; transparency is added only outside the cut.
+    background.putalpha(255)
     canvas = background
     # Decorative pixels can exist only in the ring from the visible edge to the fold.
     decorations_b64 = args.get("decorations_png_base64")
@@ -114,13 +116,21 @@ def render_layers(args: dict[str, Any]) -> tuple[bytes, dict[str, Any]]:
     bbox = subject.getchannel("A").getbbox()
     if bbox:
         subject = subject.crop(bbox)
-        box_w = int(visible_r * 1.48)
-        box_h = int(visible_r * .92)
+        # Choose a bounded box and then enforce a radial bound on all four corners,
+        # so the circle mask will not cut off the supplied character's silhouette.
+        box_w = int(visible_r * 1.25)
+        box_h = int(visible_r * .95)
         subject.thumbnail((box_w, box_h), Image.Resampling.LANCZOS)
         layer = Image.new("RGBA", canvas_size, (0, 0, 0, 0))
-        cx, cy = pixels / 2, pixels / 2 - visible_r * .37
+        cx, cy = pixels / 2, pixels / 2 - visible_r * .15
+        safe_radius = visible_r * .94
+        diagonal = math.hypot(subject.width / 2, subject.height / 2)
+        radial_available = safe_radius - abs(cy - pixels / 2)
+        if diagonal > radial_available:
+            factor = radial_available / diagonal
+            subject = subject.resize((max(1, int(subject.width * factor)), max(1, int(subject.height * factor))), Image.Resampling.LANCZOS)
         layer.alpha_composite(subject, (int(cx-subject.width/2), int(cy-subject.height/2)))
-        canvas.alpha_composite(apply_mask(layer, circle_mask(pixels, visible_r * .94)))
+        canvas.alpha_composite(apply_mask(layer, circle_mask(pixels, safe_radius)))
     exact_text = args.get("exact_text", "")
     if not isinstance(exact_text, str):
         raise ValueError("exact_text deve ser texto")
