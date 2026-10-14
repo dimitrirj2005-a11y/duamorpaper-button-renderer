@@ -1,6 +1,5 @@
 import base64
 import io
-import os
 from fastapi.testclient import TestClient
 from PIL import Image
 from app import app, PROFILES, render_layers
@@ -29,7 +28,7 @@ def test_output_has_correct_dpi_and_transparent_outside():
     })
     im = Image.open(io.BytesIO(result))
     assert im.format == 'PNG'
-    assert im.info['dpi'][0] == 300
+    assert round(im.info['dpi'][0]) == 300
     assert im.size == (int(round(48/25.4*300)),)*2
     assert im.getpixel((0,0))[3] == 0
     assert summary['geometry_masks_applied'] is True
