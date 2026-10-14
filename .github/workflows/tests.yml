@@ -1,7 +1,8 @@
-name: Tests
+name: Tests and deployed OAuth smoke test
 on:
   push:
   pull_request:
+  workflow_dispatch:
 jobs:
   test:
     runs-on: ubuntu-latest
@@ -12,19 +13,37 @@ jobs:
           python-version: '3.12'
       - run: python -m pip install -r requirements-dev.txt
       - run: python -m pytest -q
-      - name: Smoke test deployed MCP authentication
+  deployed-oauth-smoke:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Verify deployed OAuth discovery and fail-closed MCP endpoint
         shell: bash
         run: |
           set -euo pipefail
           BASE_URL="https://duamorpaper-button-renderer-mcp.onrender.com"
           curl --retry 2 --retry-delay 5 --retry-all-errors -fsS "$BASE_URL/healthz"
-          STATUS=$(curl -sS -o /tmp/mcp-smoke.json -w "%{http_code}" -X POST "$BASE_URL/mcp" \
-            -H "Content-Type: application/json" \
-            -H "Accept: application/json, text/event-stream" \
+          curl --retry 2 --retry-delay 5 --retry-all-errors -fsS "$BASE_URL/.well-known/oauth-protected-resource" -o /tmp/protected.json
+          curl --retry 2 --retry-delay 5 --retry-all-errors -fsS "$BASE_URL/.well-known/oauth-authorization-server" -o /tmp/oauth.json
+          python - <<'PY'
+          import json
+          resource = json.load(open("/tmp/protected.json"))
+          metadata = json.load(open("/tmp/oauth.json"))
+          assert resource["resource"] == "https://duamorpaper-button-renderer-mcp.onrender.com", resource
+          assert resource["authorization_servers"] == ["https://duamorpaper-button-renderer-mcp.onrender.com"], resource
+          assert metadata["authorization_response_iss_parameter_supported"] is True, metadata
+          assert metadata["client_id_metadata_document_supported"] is True, metadata
+          assert "S256" in metadata["code_challenge_methods_supported"], metadata
+          assert metadata["token_endpoint"].endswith("/token"), metadata
+          print("OAuth discovery documents verified.")
+          PY
+          STATUS=$(curl -sS -D /tmp/mcp-headers.txt -o /tmp/mcp-body.json -w "%{http_code}" -X POST "$BASE_URL/mcp" \
+            -H "Content-Type: application/json" -H "Accept: application/json, text/event-stream" \
             --data '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2024-11-05"}}')
           if [ "$STATUS" != "401" ]; then
-            cat /tmp/mcp-smoke.json
-            echo "Expected unauthenticated MCP request to return 401, got $STATUS. Check MCP_API_KEY and deployed revision."
+            cat /tmp/mcp-body.json
+            echo "Expected unauthenticated MCP call to return 401, got $STATUS."
             exit 1
           fi
-          echo "MCP endpoint is reachable and correctly rejects requests without credentials."
+          grep -qi 'oauth-protected-resource' /tmp/mcp-headers.txt
+          echo "MCP endpoint correctly requires OAuth access tokens."
