@@ -33,7 +33,7 @@ MCP HTTP endpoint: `POST /mcp`, com `Authorization: Bearer $MCP_API_KEY`.
 
 ## Implantação no Render
 
-O arquivo `render.yaml` declara o serviço web, instala os requisitos, inicia Uvicorn, configura o health check e pede ao Render que gere `MCP_API_KEY`. Use o painel do Render para importar este repositório e criar o serviço. Nunca coloque a chave secreta no código ou no Git.
+O arquivo `render.yaml` declara o serviço web, instala os requisitos, inicia Uvicorn, configura o health check e pede ao Render que gere `MCP_API_KEY`. Inicie a implantação com o Blueprint do Render usando [este link direto](https://render.com/deploy?repo=https://github.com/dimitrirj2005-a11y/duamorpaper-button-renderer). Revise o serviço e confirme a criação no Render. O Blueprint gera `MCP_API_KEY`; copie o valor pelo painel seguro do Render somente para configurar o cliente autorizado. Nunca coloque a chave secreta no código ou no Git.
 
 ## Limitação importante
 
