@@ -165,3 +165,58 @@ def test_bad_pkce_cannot_exchange_code(monkeypatch):
         "code":code, "code_verifier":"c"*43, "resource":RESOURCE,
     })
     assert bad.status_code == 400 and bad.json()["error"] == "invalid_grant"
+
+def test_private_key_jwt_signature_and_replay_protection(monkeypatch):
+    import asyncio
+    import time
+    from cryptography.hazmat.primitives.asymmetric import rsa
+    from cryptography.hazmat.primitives.serialization import Encoding, PublicFormat
+    from jwt.utils import base64url_encode
+
+    oauth_headers(monkeypatch)
+    private_key = rsa.generate_private_key(public_exponent=65537, key_size=2048)
+    public_numbers = private_key.public_key().public_numbers()
+    def int_b64(value):
+        raw = value.to_bytes((value.bit_length() + 7) // 8, "big")
+        return base64url_encode(raw).decode("ascii")
+    jwk = {
+        "kty": "RSA", "kid": "oauth-test-key", "use": "sig", "alg": "RS256",
+        "n": int_b64(public_numbers.n), "e": int_b64(public_numbers.e),
+    }
+    client_id = CLIENT_ID
+    metadata = {
+        "client_id": client_id,
+        "redirect_uris": [REDIRECT],
+        "token_endpoint_auth_method": "private_key_jwt",
+        "token_endpoint_auth_methods_supported": ["private_key_jwt"],
+        "jwks_uri": "https://chatgpt.com/oauth/jwks.json",
+    }
+    now = int(time.time())
+    assertion = jwt.encode(
+        {"iss": client_id, "sub": client_id, "aud": service.TOKEN_URL,
+         "iat": now, "exp": now + 90, "jti": "unique-test-assertion"},
+        private_key, algorithm="RS256", headers={"kid": "oauth-test-key"},
+    )
+
+    class FakeResponse:
+        def raise_for_status(self):
+            return None
+        def json(self):
+            return {"keys": [jwk]}
+
+    class FakeClient:
+        async def __aenter__(self):
+            return self
+        async def __aexit__(self, exc_type, exc, tb):
+            return False
+        async def get(self, url, headers=None):
+            assert url == metadata["jwks_uri"]
+            return FakeResponse()
+
+    monkeypatch.setattr(service.httpx, "AsyncClient", lambda **kwargs: FakeClient())
+    asyncio.run(service._verify_private_key_jwt(client_id, assertion, metadata))
+    try:
+        asyncio.run(service._verify_private_key_jwt(client_id, assertion, metadata))
+        assert False, "replayed client assertion should be rejected"
+    except ValueError as exc:
+        assert "already been used" in str(exc)
