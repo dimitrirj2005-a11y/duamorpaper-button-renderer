@@ -543,6 +543,8 @@ async def authorize_decision(request: Request):
     except Exception:
         return _error_response("invalid_request", "Expected form-encoded authorization response.")
     decision = form.get("decision", "deny")
+    decision_label = decision if decision in {"approve", "deny"} else "missing_or_unrecognized"
+    print(f"OAUTH_DIAG authorization_decision={decision_label}", flush=True)
     params = {k: form.get(k, "") for k in ("client_id", "redirect_uri", "response_type", "scope", "state", "code_challenge", "code_challenge_method", "resource")}
     try:
         metadata, scope = await _validate_authorize_params(params)
@@ -551,6 +553,7 @@ async def authorize_decision(request: Request):
     redirect_uri = params["redirect_uri"]
     state = params["state"]
     if decision != "approve":
+        print("OAUTH_DIAG authorization_result=denied redirecting_to_client=true", flush=True)
         return RedirectResponse(redirect_uri + "?" + urlencode({"error": "access_denied", "state": state, "iss": ISSUER}), status_code=303)
     user = os.getenv("OAUTH_LOGIN_USERNAME", "duamorpaper")
     password = os.getenv("OAUTH_LOGIN_PASSWORD", "")
@@ -558,14 +561,19 @@ async def authorize_decision(request: Request):
     attempts = [stamp for stamp in LOGIN_FAILURES.get(remote, []) if stamp > time.time() - LOGIN_FAILURE_WINDOW]
     LOGIN_FAILURES[remote] = attempts
     if len(attempts) >= MAX_LOGIN_FAILURES:
+        print("OAUTH_DIAG login_result=rate_limited", flush=True)
         return _oauth_login_page(params, str(metadata.get("client_name") or "ChatGPT"), "Muitas tentativas. Aguarde 15 minutos.") 
     supplied_user = form.get("username", "")
     supplied_password = form.get("password", "")
-    if not password or not hmac.compare_digest(supplied_user, user) or not hmac.compare_digest(supplied_password, password):
+    username_ok = hmac.compare_digest(supplied_user, user)
+    password_ok = bool(password) and hmac.compare_digest(supplied_password, password)
+    if not password or not username_ok or not password_ok:
+        print(f"OAUTH_DIAG login_result=rejected password_configured={bool(password)} username_match={username_ok} password_match={password_ok}", flush=True)
         attempts.append(time.time())
         LOGIN_FAILURES[remote] = attempts
         return _oauth_login_page(params, str(metadata.get("client_name") or "ChatGPT"), "Usuário ou senha incorretos.")
     LOGIN_FAILURES.pop(remote, None)
+    print("OAUTH_DIAG login_result=approved authorization_code_issued=true", flush=True)
     code = secrets.token_urlsafe(32)
     AUTH_CODES[code] = {
         "client_id": params["client_id"],
@@ -580,6 +588,7 @@ async def authorize_decision(request: Request):
 
 @app.post("/token")
 async def token_endpoint(request: Request):
+    print("OAUTH_DIAG token_endpoint_reached=true", flush=True)
     try:
         form = {k: str(v) for k, v in (await request.form()).items()}
     except Exception:
